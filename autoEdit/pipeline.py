@@ -10,6 +10,7 @@ from .yolo_name import get_roi_center_yolo
 import numpy as np
 import cv2
 from ultralytics import YOLO
+import time
 
 
 
@@ -26,6 +27,7 @@ def run_pipeline(input_folder, output_folder, watermark_path, drive_folder, prev
     # Google Drive auth
     gauth = GoogleAuth()
     gauth.LocalWebserverAuth()
+    gauth.Refresh()
     drive = GoogleDrive(gauth)
 
     # Verificar/crear carpeta en Drive
@@ -66,11 +68,22 @@ def run_pipeline(input_folder, output_folder, watermark_path, drive_folder, prev
         log_lines.append(f"Procesado: {filename}")
 
         # Subir a Drive
-        gfile = drive.CreateFile({'title': filename, 'parents':[{'id': folder_id}]})
-        gfile.SetContentFile(output_path)
-        gfile.Upload()
-        print(f"⬆ Subido a Drive: {filename}")
-        log_lines.append(f"Subido a Drive: {filename}")
+        try:
+            gfile = drive.CreateFile({
+                'title': filename,
+                'parents': [{'id': folder_id}]
+            })
+            gfile.SetContentFile(output_path)
+            gfile.Upload()
+            print(f"⬆ Subido a Drive: {filename}")
+            log_lines.append(f"Subido a Drive: {filename}")
+            time.sleep(0.5)
+
+        except Exception as e:
+            print(f"⚠️ Error subiendo {filename}: {e}")
+            log_lines.append(f"ERROR subiendo {filename}: {e}")
+            continue
+
 
         if preview:
             image_final.show()
