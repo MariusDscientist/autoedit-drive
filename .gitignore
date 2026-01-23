@@ -1,0 +1,51 @@
+# =========================
+# Python
+# =========================
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# =========================
+# Archivos temporales / logs
+# =========================
+*.log
+process_log.txt
+*.tmp
+
+# =========================
+# Resultados generados
+# =========================
+temp/
+output/
+results/
+
+# =========================
+# Imágenes de prueba
+# =========================
+fotos/
+*.JPG
+*.jpg
+*.png
+
+# =========================
+# Modelos ML (pesados)
+# =========================
+yolov8n.pt
+
+# =========================
+# Credenciales / Drive
+# =========================
+client_secrets.json
+token.json
+
+# =========================
+# Sistema
+# =========================
+.DS_Store
+Thumbs.db
