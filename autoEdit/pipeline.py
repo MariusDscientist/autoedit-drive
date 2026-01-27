@@ -1,7 +1,6 @@
 import os
 from PIL import Image, ImageOps
-from pydrive.auth import GoogleAuth
-from pydrive.drive import GoogleDrive
+# Moved Google Drive imports into run_upload_pipeline
 from .config import CLASS_WEIGHTS, LOGO_SCALE, LOGO_OPACITY, LOGO_MARGIN
 from .presets import auto_luminance_smart, add_warmth, adjust_saturation_contrast
 from .watermark import logo_to_white, apply_watermark
@@ -11,32 +10,23 @@ import numpy as np
 import cv2
 from ultralytics import YOLO
 import time
+from pydrive.auth import GoogleAuth # Keep these at top if used by other parts, or move to upload func
+from pydrive.drive import GoogleDrive # Keep these at top if used by other parts, or move to upload func
 
 
-
-
-# ================= PIPELINE PRINCIPAL =================
-def run_pipeline(input_folder, output_folder, watermark_path, drive_folder, preview=False, log=False):
-
+# ==================== PROCESSING PIPELINE ====================
+def run_processing_pipeline(input_folder, output_folder, watermark_path, preview=False, log=False):
     model = YOLO("yolov8n.pt")  # asegúrate de tener el modelo
 
     # Preparamos watermark
     watermark = Image.open(watermark_path).convert("RGBA")
     watermark = logo_to_white(watermark)
 
-    # Google Drive auth
-    gauth = GoogleAuth()
-    gauth.LocalWebserverAuth()
-    gauth.Refresh()
-    drive = GoogleDrive(gauth)
-
-    # Verificar/crear carpeta en Drive
-    folder_id = drive_folder
-
-
     os.makedirs(output_folder, exist_ok=True)
 
     log_lines = []
+    
+    print(f"🔄 Iniciando procesamiento de imágenes de '{input_folder}' a '{output_folder}'...")
 
     for filename in os.listdir(input_folder):
         if not filename.lower().endswith((".jpg",".jpeg",".png")):
@@ -67,30 +57,78 @@ def run_pipeline(input_folder, output_folder, watermark_path, drive_folder, prev
         print(f"✅ Procesado: {filename}")
         log_lines.append(f"Procesado: {filename}")
 
-        # Subir a Drive
-        try:
-            gfile = drive.CreateFile({
-                'title': filename,
-                'parents': [{'id': folder_id}]
-            })
-            gfile.SetContentFile(output_path)
-            gfile.Upload()
-            print(f"⬆ Subido a Drive: {filename}")
-            log_lines.append(f"Subido a Drive: {filename}")
-            time.sleep(0.5)
-
-        except Exception as e:
-            print(f"⚠️ Error subiendo {filename}: {e}")
-            log_lines.append(f"ERROR subiendo {filename}: {e}")
-            continue
-
-
         if preview:
             image_final.show()
             break
-
+    
     # Guardar log
     if log:
-        with open(os.path.join(output_folder,"process_log.txt"), "w") as f:
+        log_file_path = os.path.join(output_folder,"process_log.txt")
+        with open(log_file_path, "w") as f:
             f.write("\n".join(log_lines))
-        print("📄 Log guardado")
+        print(f"📄 Log de procesamiento guardado en {log_file_path}")
+    
+    print(f"🎉 Proceso de procesamiento finalizado. Imágenes guardadas en '{output_folder}'.")
+
+
+# ==================== UPLOAD PIPELINE ====================
+def run_upload_pipeline(source_folder, drive_folder_id, log=False):
+    # Google Drive auth
+    gauth = GoogleAuth()
+    gauth.LocalWebserverAuth() # Authenticates via a local webserver flow
+    gauth.Refresh() # Refreshes credentials if expired
+    drive = GoogleDrive(gauth)
+
+    log_lines = []
+    
+    print(f"🔄 Iniciando subida de imágenes desde '{source_folder}' a Google Drive (carpeta ID: {drive_folder_id})...")
+
+    # Obtener lista de archivos existentes en la carpeta de Drive
+    print("🔎 Obteniendo lista de archivos existentes en la carpeta de Drive...")
+    query = f"'{drive_folder_id}' in parents and trashed=false"
+    try:
+        existing_files_in_drive = {f['title'] for f in drive.ListFile({'q': query}).GetList()}
+        print(f"✅ Encontrados {len(existing_files_in_drive)} archivos en la carpeta de Drive.")
+    except Exception as e:
+        print(f"⚠️ Error al obtener la lista de archivos de Drive: {e}. Asegúrate de que el ID de la carpeta es correcto y tienes permisos.")
+        return # Exit if we can't get existing files
+
+    files_to_consider = [f for f in os.listdir(source_folder) if f.lower().endswith((".jpg", ".jpeg", ".png"))]
+    
+    if not files_to_consider:
+        print(f"ℹ️ No se encontraron imágenes JPG/JPEG/PNG en '{source_folder}' para subir.")
+        return
+
+    for filename in files_to_consider:
+        local_file_path = os.path.join(source_folder, filename)
+
+        if filename in existing_files_in_drive:
+            print(f"⏩ Omitiendo '{filename}', ya existe en Google Drive.")
+            log_lines.append(f"Omitido (ya existe): {filename}")
+            continue
+
+        print(f"⬆ Subiendo '{filename}'...")
+        try:
+            gfile = drive.CreateFile({
+                'title': filename,
+                'parents': [{'id': drive_folder_id}]
+            })
+            gfile.SetContentFile(local_file_path)
+            gfile.Upload()
+            print(f"✅ Subido: {filename}")
+            log_lines.append(f"Subido a Drive: {filename}")
+            time.sleep(0.5) # Pausa para evitar exceder límites de API o para una mejor UX
+
+        except Exception as e:
+            print(f"⚠️ Error subiendo '{filename}': {e}")
+            log_lines.append(f"ERROR subiendo '{filename}': {e}")
+            continue
+
+    # Guardar log de subida
+    if log:
+        log_file_path = os.path.join(source_folder, "upload_log.txt")
+        with open(log_file_path, "w") as f:
+            f.write("\n".join(log_lines))
+        print(f"📄 Log de subida guardado en {log_file_path}")
+    
+    print("🎉 Proceso de subida a Drive finalizado.")
